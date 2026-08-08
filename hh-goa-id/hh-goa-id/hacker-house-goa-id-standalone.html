@@ -522,7 +522,8 @@ blockquote{
 }
 .swatch span{width:16px; height:16px; border-radius:50%; background:var(--sw); display:block; box-shadow:inset 0 0 0 2px rgba(255,255,255,.5);}
 .swatch:hover{border-color:var(--sw);}
-.swatch.is-active{border-color:var(--sw); background:color-mix(in srgb, var(--sw) 14%, white); box-shadow:0 0 0 3px color-mix(in srgb, var(--sw) 25%, transparent);}
+.swatch.is-active{border-color:var(--sw); background:var(--sw); color:#fff;}
+.swatch.is-active span{box-shadow:inset 0 0 0 2px rgba(255,255,255,.85);}
 
 .dropzone{
   border:2px dashed #d8cfae; border-radius:var(--radius-md); background:var(--cream);
@@ -556,10 +557,10 @@ blockquote{
   --accent:#EC1E79;
   position:relative;
   width:320px;
-  aspect-ratio:320/500;
+  min-height:460px;
   border-radius:22px;
   background:
-    radial-gradient(120% 60% at 100% 0%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 60%),
+    radial-gradient(120% 60% at 100% 0%, var(--accent) 0%, transparent 62%),
     linear-gradient(165deg, var(--forest-800), var(--forest-900) 70%);
   color:var(--white);
   padding:22px 20px 18px;
@@ -568,6 +569,8 @@ blockquote{
   transform:rotate(-1.2deg);
   transition:transform .35s var(--ease), box-shadow .35s var(--ease);
   will-change:transform;
+  display:flex;
+  flex-direction:column;
 }
 .id-card::after{
   content:"";
@@ -623,15 +626,15 @@ blockquote{
 }
 
 .id-card__row{display:flex; justify-content:space-between; gap:12px; margin-bottom:14px;}
-.id-card__row > div{display:flex; flex-direction:column; gap:3px;}
+.id-card__row > div{display:flex; flex-direction:column; gap:3px; min-width:0; max-width:60%;}
 .id-card__k{font-family:var(--font-mono); font-size:.56rem; text-transform:uppercase; letter-spacing:.06em; color:rgba(255,255,255,.5);}
-.id-card__v{font-size:.82rem; font-weight:600; color:var(--white);}
+.id-card__v{font-size:.82rem; font-weight:600; color:var(--white); overflow-wrap:anywhere;}
 
-.id-card__foot{display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:10px;}
+.id-card__foot{display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:10px; margin-top:auto; padding-top:14px; gap:10px;}
 .id-card__num{font-family:var(--font-mono); font-size:.95rem; font-weight:700; color:var(--yellow); letter-spacing:.03em;}
 
 .id-card__barcode{
-  height:22px; border-radius:3px; margin-bottom:8px;
+  height:22px; border-radius:3px; margin-bottom:8px; flex-shrink:0;
   background-image:repeating-linear-gradient(90deg, var(--white) 0 2px, transparent 2px 5px);
   opacity:.85;
 }
@@ -1428,17 +1431,37 @@ blockquote{
   --------------------------------------------------------- */
   function downloadCardNode(node, filenameHint) {
     if (!window.html2canvas) {
-      showToast("Download isn't ready yet — try again in a second.");
+      showToast("Download isn't ready yet — check your connection and try again.");
       return;
     }
     showToast("Rendering your ID…");
-    html2canvas(node, { backgroundColor: null, scale: 3 }).then((canvas) => {
-      const link = document.createElement("a");
-      link.download = `hacker-house-goa-id-${filenameHint || "builder"}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-      showToast("ID downloaded ✓");
-    });
+    html2canvas(node, {
+      backgroundColor: null,
+      scale: 3,
+      useCORS: true,
+      logging: false,
+    })
+      .then((canvas) => {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            showToast("Couldn't export that image — try again.");
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.download = `hacker-house-goa-id-${filenameHint || "builder"}.png`;
+          link.href = url;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 4000);
+          showToast("ID downloaded ✓");
+        }, "image/png");
+      })
+      .catch((err) => {
+        console.error("html2canvas failed:", err);
+        showToast("Download failed — please try again.");
+      });
   }
 
   document.getElementById("downloadAllBtn").addEventListener("click", async () => {
@@ -1447,13 +1470,26 @@ blockquote{
     for (const node of nodes) {
       // eslint-disable-next-line no-await-in-loop
       await new Promise((resolve) => {
-        html2canvas(node, { backgroundColor: null, scale: 3 }).then((canvas) => {
-          const link = document.createElement("a");
-          link.download = `hacker-house-goa-id-${node.dataset.id}.png`;
-          link.href = canvas.toDataURL("image/png");
-          link.click();
-          setTimeout(resolve, 350);
-        });
+        html2canvas(node, { backgroundColor: null, scale: 3, useCORS: true, logging: false })
+          .then((canvas) => {
+            canvas.toBlob((blob) => {
+              if (blob) {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.download = `hacker-house-goa-id-${node.dataset.id}.png`;
+                link.href = url;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 4000);
+              }
+              setTimeout(resolve, 350);
+            }, "image/png");
+          })
+          .catch((err) => {
+            console.error("html2canvas failed:", err);
+            resolve();
+          });
       });
     }
     showToast("All IDs downloaded ✓");

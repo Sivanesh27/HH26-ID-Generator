@@ -399,17 +399,37 @@
   --------------------------------------------------------- */
   function downloadCardNode(node, filenameHint) {
     if (!window.html2canvas) {
-      showToast("Download isn't ready yet — try again in a second.");
+      showToast("Download isn't ready yet — check your connection and try again.");
       return;
     }
     showToast("Rendering your ID…");
-    html2canvas(node, { backgroundColor: null, scale: 3 }).then((canvas) => {
-      const link = document.createElement("a");
-      link.download = `hacker-house-goa-id-${filenameHint || "builder"}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-      showToast("ID downloaded ✓");
-    });
+    html2canvas(node, {
+      backgroundColor: null,
+      scale: 3,
+      useCORS: true,
+      logging: false,
+    })
+      .then((canvas) => {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            showToast("Couldn't export that image — try again.");
+            return;
+          }
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.download = `hacker-house-goa-id-${filenameHint || "builder"}.png`;
+          link.href = url;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 4000);
+          showToast("ID downloaded ✓");
+        }, "image/png");
+      })
+      .catch((err) => {
+        console.error("html2canvas failed:", err);
+        showToast("Download failed — please try again.");
+      });
   }
 
   document.getElementById("downloadAllBtn").addEventListener("click", async () => {
@@ -418,13 +438,26 @@
     for (const node of nodes) {
       // eslint-disable-next-line no-await-in-loop
       await new Promise((resolve) => {
-        html2canvas(node, { backgroundColor: null, scale: 3 }).then((canvas) => {
-          const link = document.createElement("a");
-          link.download = `hacker-house-goa-id-${node.dataset.id}.png`;
-          link.href = canvas.toDataURL("image/png");
-          link.click();
-          setTimeout(resolve, 350);
-        });
+        html2canvas(node, { backgroundColor: null, scale: 3, useCORS: true, logging: false })
+          .then((canvas) => {
+            canvas.toBlob((blob) => {
+              if (blob) {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.download = `hacker-house-goa-id-${node.dataset.id}.png`;
+                link.href = url;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 4000);
+              }
+              setTimeout(resolve, 350);
+            }, "image/png");
+          })
+          .catch((err) => {
+            console.error("html2canvas failed:", err);
+            resolve();
+          });
       });
     }
     showToast("All IDs downloaded ✓");
