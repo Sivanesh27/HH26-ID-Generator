@@ -25,14 +25,14 @@ The only external dependencies loaded from CDN in `index.html` are Google Fonts 
 
 ## Why the Share-to-X flow needs a backend
 
-X's web share intent (`twitter.com/intent/tweet`) can't attach an image file directly via a URL parameter — that's a platform restriction on X's side, true for every website, not something this tool can route around with a URL alone.
+X's web share intent (`twitter.com/intent/tweet`) can't attach an image file directly via a URL parameter — that's been true for years. The only way a shared **link** shows the real generated image as its preview is if that link points to a page with correct `og:image` / `twitter:image` meta tags, and the image itself has to be hosted somewhere reachable.
 
-So the share button tries two paths, in order:
+So the flow is:
+1. The browser renders the badge to a PNG (client-side, via html2canvas).
+2. It's POSTed to a small Netlify Function (`share-upload.js`), which stores it in **Netlify Blobs** (object storage built into Netlify — no separate database or API keys needed) and returns a clean URL like `yoursite.netlify.app/s/ab12cd`.
+3. That URL is what gets passed to the X share intent. When X's crawler fetches it, `share-page.js` returns HTML with `og:image` pointing at `yoursite.netlify.app/img/ab12cd` (served by `share-image.js`) — so the link preview shows the actual badge.
 
-1. **Native share sheet (real file attachment).** If the browser supports the Web Share API with files (`navigator.share`/`navigator.canShare`) — true for most phones (iOS Safari, Android Chrome) and many modern desktop browsers — the generated PNG is handed directly to the OS share sheet along with the caption. The person picks **X** from that sheet, and X's own app opens with the image already attached and the caption pre-filled. This is the only way a website can get an actual file into a post; it's not going through a link at all.
-2. **Link-preview fallback.** On browsers that don't support file sharing (mainly desktop Firefox, older Safari), the PNG is uploaded to a small Netlify Function (`share-upload.js`), stored in **Netlify Blobs** (object storage built into Netlify, no separate database or API keys needed), and returned as a clean URL like `yoursite.netlify.app/s/ab12cd`. That URL is passed to the X share intent instead. When X's crawler fetches it, `share-page.js` returns HTML with `og:image` pointing at `yoursite.netlify.app/img/ab12cd` (served by `share-image.js`), so the link preview shows the actual badge even though the file itself isn't attached.
-
-If both paths fail (offline, functions not deployed yet, share sheet cancelled with an error), the site falls back to downloading the PNG locally and opening a text-only tweet compose window, so the button never just does nothing.
+If the upload ever fails (offline, function not deployed yet, etc.), the site falls back gracefully: it downloads the PNG locally and opens a text-only tweet compose window instead, so the button never just does nothing.
 
 ## Run it locally (UI only, no share backend)
 
@@ -72,7 +72,7 @@ netlify dev
 | Near-instant result | ✅ live preview updates as you type; PNG render is client-side and typically well under a second |
 | Download real image file | ✅ PNG via html2canvas, triggered as a real file download |
 | Share to X: pre-filled caption + `#FrameInGoa` | ✅ caption includes the hashtag; also passed via the intent's `hashtags` param |
-| Image attached, or link preview shows the actual graphic | ✅ real PNG attachment via native share sheet where supported (most phones); falls back to a `/s/<id>` link with `og:image`/`twitter:image` pointing at the stored badge elsewhere |
+| Link preview shows the actual graphic | ✅ via `/s/<id>` page with `og:image`/`twitter:image` pointing at the stored badge |
 | No login wall / signup gate | ✅ none — works in one pass |
 | Handles real photos (any crop/aspect ratio) | ✅ photo auto-crops to a centered square via `object-fit`-style cover, no pre-cropping required |
 | On-brand | ✅ matches the official green/yellow/pink palette, typography, and the "गोवा" mark from the event doc |
