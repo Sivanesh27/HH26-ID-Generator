@@ -472,7 +472,7 @@
   --------------------------------------------------------- */
   function buildCaption(member) {
     const track = member.track ? ` on the ${member.track} track` : "";
-    return `Just built my Builder ID for Hacker House Goa 2026${track} 🌊💻 Building my way to a seat on the beach. #FrameInGoa`;
+    return `Just built my Builder ID for Hacker House Goa 2026${track} 🌊💻 Building my way to a seat on the beach. Create your ID at hh26-idgenerator.netlify.app  `;
   }
 
   function openTweetIntent(caption, targetWindow) {
