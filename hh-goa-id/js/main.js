@@ -476,7 +476,10 @@
   }
 
   function openTweetIntent(caption, targetWindow) {
-    const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}&hashtags=FrameInGoa`;
+    // The hashtag is already inside `caption`, so we don't also pass the
+    // `hashtags` param here — X would otherwise append #FrameInGoa a
+    // second time, which is what caused the duplicate hashtag before.
+    const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}`;
     if (targetWindow && !targetWindow.closed) targetWindow.location.href = tweetUrl;
     else window.open(tweetUrl, "_blank");
   }
