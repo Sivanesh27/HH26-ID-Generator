@@ -1513,11 +1513,14 @@ blockquote{
   --------------------------------------------------------- */
   function buildCaption(member) {
     const track = member.track ? ` on the ${member.track} track` : "";
-    return `Just built my Builder ID for Hacker House Goa 2026${track} 🌊💻 Building my way to a seat on the beach. #FrameInGoa`;
+    return `Just built my Builder ID for Hacker House Goa 2026${track} 🌊💻 Building my way to a seat on the beach. #FrameInGoa\nCreate your ID at hh26-idgenerator.netlify.app`;
   }
 
   function openTweetIntent(caption, targetWindow) {
-    const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}&hashtags=FrameInGoa`;
+    // The hashtag is already inside `caption`, so we don't also pass the
+    // `hashtags` param here — X would otherwise append #FrameInGoa a
+    // second time, which is what caused the duplicate hashtag before.
+    const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}`;
     if (targetWindow && !targetWindow.closed) targetWindow.location.href = tweetUrl;
     else window.open(tweetUrl, "_blank");
   }
