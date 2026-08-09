@@ -1462,6 +1462,17 @@ blockquote{
   /* ---------------------------------------------------------
      Download as PNG (html2canvas)
   --------------------------------------------------------- */
+  function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.download = filename;
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
   function downloadCardNode(node, filenameHint) {
     if (!window.html2canvas) {
       showToast("Download isn't ready yet — check your connection and try again.");
@@ -1480,14 +1491,7 @@ blockquote{
             showToast("Couldn't export that image — try again.");
             return;
           }
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement("a");
-          link.download = `hacker-house-goa-id-${filenameHint || "builder"}.png`;
-          link.href = url;
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 4000);
+          triggerDownload(blob, `hacker-house-goa-id-${filenameHint || "builder"}.png`);
           showToast("ID downloaded ✓");
         }, "image/png");
       })
@@ -1499,21 +1503,29 @@ blockquote{
 
   /* ---------------------------------------------------------
      Share to X
-     X's web share intent can't attach an image via URL, so we
-     upload the badge to our own Netlify Function (backed by
-     Netlify Blobs), get back a clean /s/<id> link whose Open
-     Graph tags point at the image, and share THAT link — X
-     then unfurls it with the real badge as the preview.
+     X's compose window can't pull an image attachment in from
+     a URL on its own, so the reliable flow is: download the
+     real PNG first, then open X with the caption + hashtag
+     already typed in — the person attaches the file themselves.
+     On phones/browsers that support the native Share Sheet with
+     files, we also try handing the file across directly as a
+     bonus, so picking X there can attach it automatically.
   --------------------------------------------------------- */
   function buildCaption(member) {
     const track = member.track ? ` on the ${member.track} track` : "";
     return `Just built my Builder ID for Hacker House Goa 2026${track} 🌊💻 Building my way to a seat on the beach. #FrameInGoa`;
   }
 
+  function openTweetIntent(caption, targetWindow) {
+    const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(caption)}&hashtags=FrameInGoa`;
+    if (targetWindow && !targetWindow.closed) targetWindow.location.href = tweetUrl;
+    else window.open(tweetUrl, "_blank");
+  }
+
   async function shareCardToX(node, member, triggerBtn) {
-    // Open the tab synchronously (before any await) so popup blockers don't
-    // swallow it — used only if we fall back to the link-based share below.
-    // If native file sharing works, we close this unused blank tab instead.
+    // Opened synchronously (before any await) so popup blockers don't
+    // swallow it — we point it at X once we're ready, or close it if the
+    // native share sheet ends up handling everything instead.
     const shareWin = window.open("", "_blank");
     if (triggerBtn) triggerBtn.disabled = true;
     showToast("Preparing your share…");
@@ -1523,74 +1535,44 @@ blockquote{
 
       const canvas = await html2canvas(node, {
         backgroundColor: null,
-        scale: 2.5,
+        scale: 3,
         useCORS: true,
         logging: false,
       });
-
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) throw new Error("could not export image");
 
       const slug = (member.name || "builder").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-      const file = new File([blob], `hacker-house-goa-id-${slug || "builder"}.png`, { type: "image/png" });
+      const filename = `hacker-house-goa-id-${slug || "builder"}.png`;
       const caption = buildCaption(member);
 
-      // Path 1 — native share sheet with the PNG attached as a real file.
-      // This is the only way a website can hand X an actual image to post
-      // with (X's own tweet-intent URL cannot carry a file attachment).
-      // Supported on most phones and many modern desktop browsers.
+      // Always hand over the actual file — this is what gets attached.
+      triggerDownload(blob, filename);
+
+      // Bonus path: on phones/browsers that support it, offer the file to
+      // the native share sheet directly, so picking X there can attach it
+      // without a manual step.
+      const file = new File([blob], filename, { type: "image/png" });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         if (shareWin && !shareWin.closed) shareWin.close();
         try {
           await navigator.share({ files: [file], text: caption });
-          showToast("Pick X in the share sheet — your badge is attached.");
+          showToast("Badge downloaded — and sent to your share sheet, ready to post.");
+          return;
         } catch (shareErr) {
-          if (!shareErr || shareErr.name !== "AbortError") {
-            console.warn("navigator.share failed:", shareErr);
-            showToast("Share was cancelled — you can also just download and post manually.");
+          if (shareErr && shareErr.name === "AbortError") {
+            showToast("Share sheet closed — opening X with your caption instead.");
           }
+          // fall through to opening X directly, regardless of the error
         }
-        return;
       }
 
-      // Path 2 — fallback for browsers that can't share files (mainly
-      // desktop). Upload the badge and share a link whose Open Graph
-      // preview shows it, since we can't attach the file directly here.
-      const dataUrl = canvas.toDataURL("image/png");
-      const res = await fetch("/.netlify/functions/share-upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image: dataUrl,
-          name: member.name,
-          role: member.role,
-          track: member.track,
-          team: member.team,
-        }),
-      });
-
-      if (!res.ok) throw new Error(`upload failed (${res.status})`);
-      const data = await res.json();
-      if (!data.shareUrl) throw new Error("no shareUrl returned");
-
-      const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
-        caption
-      )}&url=${encodeURIComponent(data.shareUrl)}&hashtags=FrameInGoa`;
-
-      if (shareWin && !shareWin.closed) shareWin.location.href = tweetUrl;
-      else window.open(tweetUrl, "_blank");
-
-      showToast("This browser can't attach the file directly — opening X with a link preview instead.");
+      openTweetIntent(caption, shareWin);
+      showToast("Badge downloaded — attach it in the X window that just opened.");
     } catch (err) {
       console.error("share failed:", err);
-      showToast("Couldn't prepare a share — downloading your ID so you can attach it manually.");
-      downloadCardNode(node, member.id || "builder");
-
-      const fallbackUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
-        buildCaption(member)
-      )}&hashtags=FrameInGoa`;
-      if (shareWin && !shareWin.closed) shareWin.location.href = fallbackUrl;
-      else window.open(fallbackUrl, "_blank");
+      showToast("Couldn't render the image — opening X with your caption anyway.");
+      openTweetIntent(buildCaption(member), shareWin);
     } finally {
       if (triggerBtn) triggerBtn.disabled = false;
     }
@@ -1605,16 +1587,7 @@ blockquote{
         html2canvas(node, { backgroundColor: null, scale: 3, useCORS: true, logging: false })
           .then((canvas) => {
             canvas.toBlob((blob) => {
-              if (blob) {
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                link.download = `hacker-house-goa-id-${node.dataset.id}.png`;
-                link.href = url;
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                setTimeout(() => URL.revokeObjectURL(url), 4000);
-              }
+              if (blob) triggerDownload(blob, `hacker-house-goa-id-${node.dataset.id}.png`);
               setTimeout(resolve, 350);
             }, "image/png");
           })

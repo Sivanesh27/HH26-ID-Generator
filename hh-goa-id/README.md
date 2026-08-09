@@ -1,40 +1,39 @@
 # Hacker House Goa 2026 — Builder ID Site
 
-A site that:
+A single, dependency-free static site that:
 
 - Explains the selection framework (Open Trials → Partner Trials → RSVP & Stake → Residency), lifted straight from the official "Road to 247" doc.
 - Lets every visitor build their own laminated **Builder ID** badge — name, role, build track, team, and a photo they upload themselves (jpg, png, and iPhone HEIC — with a friendly message if a browser can't preview HEIC).
-- Lets a team (1–3 people, matching the real rules) add each member's ID to a roster, then **download** each badge as a PNG.
-- Lets anyone **Share to X** with a pre-filled caption and the `#FrameInGoa` hashtag, as a link whose preview card shows the actual generated badge (not a blank thumbnail).
+- Lets a team (1–3 people, matching the real rules) add each member's ID to a roster, then **download** each badge (or all of them) as a PNG.
+- Lets anyone **Share to X**: the badge downloads automatically and X opens with a caption + `#FrameInGoa` already typed in — just attach the file that downloaded. On phones and browsers that support the native Share Sheet with files, it also offers the file there directly, so picking X can attach it without a manual step.
+
+No backend, no build step, no npm install. It's plain HTML/CSS/JS, so it deploys as-is.
 
 ## File structure
 
 ```
-index.html                  → all markup & copy
-css/style.css                → design tokens + styling
-js/main.js                   → form logic, live preview, roster, confetti, PNG export, X share
-netlify.toml                 → clean URLs for share links + functions config
-package.json                 → declares @netlify/blobs so Netlify installs it before building
-netlify/functions/
-  share-upload.js             → stores a generated badge, returns a shareable /s/<id> link
-  share-image.js               → serves the raw badge PNG at /img/<id>
-  share-page.js                 → serves the /s/<id> HTML page with correct OG/Twitter Card tags
+index.html        → all markup & copy
+css/style.css      → design tokens + styling
+js/main.js         → form logic, live preview, roster, confetti, PNG export, X share
 ```
 
-The only external dependencies loaded from CDN in `index.html` are Google Fonts and [html2canvas](https://html2canvas.hertzen.com/) (used only when someone clicks Download or Share).
+The only external dependencies are loaded from CDN in `index.html`:
+- Google Fonts (Anton, Space Grotesk, Space Mono)
+- [html2canvas](https://html2canvas.hertzen.com/) (used only when someone clicks Download or Share)
 
-## Why the Share-to-X flow needs a backend
+## How Share to X works
 
-X's web share intent (`twitter.com/intent/tweet`) can't attach an image file directly via a URL parameter — that's a platform restriction on X's side, true for every website, not something this tool can route around with a URL alone.
+X's compose window can't pull an image attachment in from a URL on its own — there's no way for any website to make that happen automatically through the share-intent link alone. So the flow is built to be reliable rather than clever:
 
-So the share button tries two paths, in order:
+1. Clicking **Share** renders the badge to a PNG and downloads it immediately.
+2. If the browser supports the native Share Sheet with files (`navigator.share`/`navigator.canShare` — most phones, some desktop browsers), the file is also offered there. Picking X from that sheet can attach it automatically.
+3. Either way, X opens with the caption and `#FrameInGoa` already filled in. If step 2 wasn't available or was cancelled, the person just attaches the file that already downloaded in step 1.
 
-1. **Native share sheet (real file attachment).** If the browser supports the Web Share API with files (`navigator.share`/`navigator.canShare`) — true for most phones (iOS Safari, Android Chrome) and many modern desktop browsers — the generated PNG is handed directly to the OS share sheet along with the caption. The person picks **X** from that sheet, and X's own app opens with the image already attached and the caption pre-filled. This is the only way a website can get an actual file into a post; it's not going through a link at all.
-2. **Link-preview fallback.** On browsers that don't support file sharing (mainly desktop Firefox, older Safari), the PNG is uploaded to a small Netlify Function (`share-upload.js`), stored in **Netlify Blobs** (object storage built into Netlify, no separate database or API keys needed), and returned as a clean URL like `yoursite.netlify.app/s/ab12cd`. That URL is passed to the X share intent instead. When X's crawler fetches it, `share-page.js` returns HTML with `og:image` pointing at `yoursite.netlify.app/img/ab12cd` (served by `share-image.js`), so the link preview shows the actual badge even though the file itself isn't attached.
+This never depends on a network request succeeding, so it can't silently fail — worst case, X still opens with the caption ready.
 
-If both paths fail (offline, functions not deployed yet, share sheet cancelled with an error), the site falls back to downloading the PNG locally and opening a text-only tweet compose window, so the button never just does nothing.
+## Run it locally
 
-## Run it locally (UI only, no share backend)
+No build tools needed — just serve the folder statically, e.g.:
 
 ```bash
 npx serve .
@@ -42,26 +41,24 @@ npx serve .
 python3 -m http.server 8080
 ```
 
-This is fine for checking the design, the live preview, and Download. **Share to X will fall back to "download + text-only tweet"** locally, since the Netlify Functions only run once deployed (or via `netlify dev`, see below).
-
-To test the full share flow locally, install the [Netlify CLI](https://docs.netlify.com/cli/get-started/) and run:
-```bash
-npm install
-netlify dev
-```
+Then open `http://localhost:8080` (or whatever port).
 
 ## Deploy on GitHub + Netlify
 
-**Important:** because this project now includes serverless Functions, it must be deployed through Netlify's Git-connected build (or `netlify deploy` via the CLI) — a plain drag-and-drop of the folder onto Netlify's UI will publish the static pages but **will not** bundle or run the Functions, so Share to X won't work.
-
-1. Push this whole folder to a GitHub repo, with `index.html`, `netlify.toml`, `package.json`, and the `netlify/` folder all sitting at the **repo root** (not nested inside another folder of the same name — check this if you're reusing an existing repo).
+1. Push this folder to a GitHub repo, keeping `index.html` at the repo root (not nested inside another folder of the same name).
 2. In Netlify: **Add new site → Import an existing project → GitHub** → pick the repo.
 3. Build settings:
    - **Build command:** leave blank
-   - **Publish directory:** `.`
-   - Netlify will auto-detect `netlify/functions` from `netlify.toml` and bundle the functions during the build (it runs `npm install` first, which pulls in `@netlify/blobs`).
-4. Deploy. Netlify Blobs works with zero extra configuration — it's enabled by default for every site.
-5. Test the full loop on the live URL: build an ID → Download (should save a PNG) → Share (should open X with your caption, `#FrameInGoa`, and a link — paste that link anywhere to confirm the preview shows your badge).
+   - **Publish directory:** `.` (repo root)
+4. Deploy. That's it — it's a static site, so there's nothing to build.
+
+You can also skip GitHub entirely and drag-and-drop this folder onto [app.netlify.com/drop](https://app.netlify.com/drop) — since there's no backend anymore, that works just as well.
+
+## Notes on the "seats claimed" counter
+
+The counter on the homepage is a **front-end simulation** — it interpolates a plausible number of claimed seats between the Open Trials start (Aug 2026) and the RSVP & Stake deadline (late Sept 2026), then adds however many IDs the *current visitor* has generated (stored in their browser's `localStorage`). It's there to make the countdown feel alive without needing a backend.
+
+Everything (the ID cards, the uploaded photo, the roster) is stored only in the visitor's own browser — nothing is uploaded anywhere.
 
 ## Requirements checklist (from the shortlisting brief)
 
@@ -72,16 +69,14 @@ netlify dev
 | Near-instant result | ✅ live preview updates as you type; PNG render is client-side and typically well under a second |
 | Download real image file | ✅ PNG via html2canvas, triggered as a real file download |
 | Share to X: pre-filled caption + `#FrameInGoa` | ✅ caption includes the hashtag; also passed via the intent's `hashtags` param |
-| Image attached, or link preview shows the actual graphic | ✅ real PNG attachment via native share sheet where supported (most phones); falls back to a `/s/<id>` link with `og:image`/`twitter:image` pointing at the stored badge elsewhere |
+| Image gets into the post | ✅ badge downloads automatically for manual attach; native file-share attempted first on supported devices |
 | No login wall / signup gate | ✅ none — works in one pass |
-| Handles real photos (any crop/aspect ratio) | ✅ photo auto-crops to a centered square via `object-fit`-style cover, no pre-cropping required |
+| Handles real photos (any crop/aspect ratio) | ✅ photo auto-crops to a centered square via cover-fit, no pre-cropping required |
 | On-brand | ✅ matches the official green/yellow/pink palette, typography, and the "गोवा" mark from the event doc |
-| Mobile-friendly | ✅ responsive layout; share flow opens a new tab synchronously to avoid mobile popup blockers |
+| Mobile-friendly | ✅ responsive layout; share flow opens synchronously to avoid mobile popup blockers |
 
 ## Customizing
 
-- **Colors / fonts:** CSS variables at the top of `css/style.css` (`:root`).
+- **Colors / fonts:** all defined as CSS variables at the top of `css/style.css` (`:root`).
 - **Copy / caption text:** `buildCaption()` in `js/main.js` for the tweet caption; page copy lives in `index.html`.
 - **Total seats / team size:** `TOTAL_SEATS` and `MAX_TEAM` constants at the top of `js/main.js`.
-- **How long shared badges stick around:** currently indefinite (Netlify Blobs has no built-in expiry) — add a cleanup routine if you want old shares to expire.
-
