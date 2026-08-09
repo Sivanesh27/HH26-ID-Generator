@@ -1,0 +1,9 @@
+{
+  "name": "hh-goa-id-generator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hacker House Goa 2026 — Builder ID / Frame generator, with X share support via Netlify Functions + Blobs.",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
