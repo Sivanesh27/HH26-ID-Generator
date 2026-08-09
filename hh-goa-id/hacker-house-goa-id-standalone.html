@@ -1511,8 +1511,9 @@ blockquote{
   }
 
   async function shareCardToX(node, member, triggerBtn) {
-    // Open the tab synchronously (before any await) so mobile/desktop
-    // popup blockers don't swallow it — we navigate it once we're ready.
+    // Open the tab synchronously (before any await) so popup blockers don't
+    // swallow it — used only if we fall back to the link-based share below.
+    // If native file sharing works, we close this unused blank tab instead.
     const shareWin = window.open("", "_blank");
     if (triggerBtn) triggerBtn.disabled = true;
     showToast("Preparing your share…");
@@ -1522,12 +1523,40 @@ blockquote{
 
       const canvas = await html2canvas(node, {
         backgroundColor: null,
-        scale: 2,
+        scale: 2.5,
         useCORS: true,
         logging: false,
       });
-      const dataUrl = canvas.toDataURL("image/png");
 
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("could not export image");
+
+      const slug = (member.name || "builder").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      const file = new File([blob], `hacker-house-goa-id-${slug || "builder"}.png`, { type: "image/png" });
+      const caption = buildCaption(member);
+
+      // Path 1 — native share sheet with the PNG attached as a real file.
+      // This is the only way a website can hand X an actual image to post
+      // with (X's own tweet-intent URL cannot carry a file attachment).
+      // Supported on most phones and many modern desktop browsers.
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        if (shareWin && !shareWin.closed) shareWin.close();
+        try {
+          await navigator.share({ files: [file], text: caption });
+          showToast("Pick X in the share sheet — your badge is attached.");
+        } catch (shareErr) {
+          if (!shareErr || shareErr.name !== "AbortError") {
+            console.warn("navigator.share failed:", shareErr);
+            showToast("Share was cancelled — you can also just download and post manually.");
+          }
+        }
+        return;
+      }
+
+      // Path 2 — fallback for browsers that can't share files (mainly
+      // desktop). Upload the badge and share a link whose Open Graph
+      // preview shows it, since we can't attach the file directly here.
+      const dataUrl = canvas.toDataURL("image/png");
       const res = await fetch("/.netlify/functions/share-upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1545,16 +1574,16 @@ blockquote{
       if (!data.shareUrl) throw new Error("no shareUrl returned");
 
       const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
-        buildCaption(member)
+        caption
       )}&url=${encodeURIComponent(data.shareUrl)}&hashtags=FrameInGoa`;
 
       if (shareWin && !shareWin.closed) shareWin.location.href = tweetUrl;
       else window.open(tweetUrl, "_blank");
 
-      showToast("Opening X — your badge will show as the link preview.");
+      showToast("This browser can't attach the file directly — opening X with a link preview instead.");
     } catch (err) {
       console.error("share failed:", err);
-      showToast("Couldn't prepare a live preview — downloading your ID so you can attach it manually.");
+      showToast("Couldn't prepare a share — downloading your ID so you can attach it manually.");
       downloadCardNode(node, member.id || "builder");
 
       const fallbackUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
